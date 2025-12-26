@@ -88,3 +88,173 @@ timestamp,soe
 2024-07-19 00:30:00,43
 [...]
 ```
+
+## Automated Daily Runs
+
+The project supports automated daily data downloads with optional Home Assistant integration via MQTT.
+
+### Configuration
+
+1. Copy the example environment file and edit it:
+    ```bash
+    cp env.example .env
+    nano .env
+    ```
+
+2. Configure your settings:
+    ```bash
+    # Required
+    TESLA_EMAIL=your_tesla_email@example.com
+    
+    # MQTT (for Home Assistant)
+    MQTT_ENABLED=true
+    MQTT_HOST=your-home-assistant-ip
+    MQTT_PORT=1883
+    MQTT_USERNAME=mqtt_user
+    MQTT_PASSWORD=mqtt_password
+    ```
+
+3. Install additional dependencies:
+    ```bash
+    pip3 install -r requirements.txt
+    ```
+
+### Running the Daily Script
+
+```bash
+# Download data and publish to MQTT
+python3 run_daily.py
+
+# Download only (no MQTT)
+python3 run_daily.py --download-only
+
+# Publish existing data to MQTT only
+python3 run_daily.py --publish-only
+
+# Publish ALL historical data (useful for initial setup/backfill)
+python3 run_daily.py --publish-only --all-history
+
+# Adjust batch settings for history publish (reduce broker load)
+python3 run_daily.py --publish-only --all-history --batch-size 50 --batch-delay 0.2
+
+# Debug mode
+python3 run_daily.py --debug
+```
+
+### Setting Up Automatic Daily Runs (systemd)
+
+1. Run the installer:
+    ```bash
+    cd systemd
+    ./install.sh
+    ```
+
+2. Check the timer status:
+    ```bash
+    systemctl --user status tesla-solar.timer
+    ```
+
+3. View logs:
+    ```bash
+    journalctl --user -u tesla-solar.service -f
+    ```
+
+The service runs daily at 11:30 PM by default (configurable in the timer file).
+
+## Home Assistant Integration
+
+The project publishes data to MQTT with Home Assistant auto-discovery support. Sensors will automatically appear in Home Assistant after the first data publish.
+
+### Prerequisites
+
+1. **MQTT Broker**: Install the Mosquitto broker add-on in Home Assistant
+2. **MQTT Integration**: Enable MQTT in Home Assistant Settings → Devices & Services
+
+### Sensors
+
+The following sensors are automatically created:
+
+**Power (5-minute intervals):**
+- Solar Power (W)
+- Battery Power (W)
+- Grid Power (W)
+- Home Load (W)
+
+**Battery:**
+- Battery State of Charge (%)
+
+**Energy (daily totals):**
+- Solar Energy Today (Wh)
+- Grid Energy Imported (Wh)
+- Grid Energy Exported (Wh)
+- Battery Energy Charged/Discharged (Wh)
+
+### Energy Dashboard
+
+Add the sensors to your Energy Dashboard:
+1. Settings → Dashboards → Energy
+2. Add "Tesla Solar Energy Today" under Solar Panels
+3. Add grid import/export sensors
+
+See `homeassistant/README.md` for detailed configuration and dashboard examples.
+
+## InfluxDB Integration (Historical Data)
+
+**MQTT only stores the latest value** - it doesn't preserve historical timestamps. For proper historical data import with correct timestamps, use InfluxDB.
+
+### Setting Up InfluxDB
+
+1. **Install InfluxDB** (via Home Assistant add-on or standalone):
+   ```bash
+   # Docker example
+   docker run -d -p 8086:8086 \
+     -v influxdb-data:/var/lib/influxdb2 \
+     influxdb:2.7
+   ```
+
+2. **Create a bucket and token** in the InfluxDB UI (http://localhost:8086)
+
+3. **Configure your .env**:
+   ```bash
+   INFLUXDB_ENABLED=true
+   INFLUXDB_URL=http://localhost:8086
+   INFLUXDB_TOKEN=your-token-here
+   INFLUXDB_ORG=home
+   INFLUXDB_BUCKET=tesla_solar
+   ```
+
+### Importing Historical Data
+
+```bash
+# Import all historical data to InfluxDB (with proper timestamps!)
+python run_daily.py --publish-only --all-history --influxdb-only
+
+# Or use the standalone script
+python influxdb_publisher.py --all-history
+```
+
+### Viewing in Home Assistant
+
+1. Install the **InfluxDB integration** in Home Assistant
+2. Or use **Grafana** with the InfluxDB datasource for advanced dashboards
+3. Grafana can be embedded in Home Assistant via iframe
+
+### Data Schema in InfluxDB
+
+```
+Measurements:
+- tesla_solar_power  (solar_power, battery_power, grid_power, load_power)
+- tesla_solar_soe    (soe)
+- tesla_solar_energy (solar_energy_exported, grid_energy_imported, etc.)
+
+Tags:
+- site_id
+```
+
+Example Flux query:
+```flux
+from(bucket: "tesla_solar")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r._measurement == "tesla_solar_power")
+  |> filter(fn: (r) => r._field == "solar_power")
+```

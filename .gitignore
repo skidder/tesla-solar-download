@@ -3,3 +3,9 @@ download
 venv
 var
 .DS_Store
+*.log
+__pycache__/
+*.pyc
+.env
+systemd/tesla-solar.service
+systemd/tesla-solar.timer

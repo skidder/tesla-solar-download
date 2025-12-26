@@ -13,3 +13,11 @@ six==1.16.0
 TeslaPy==2.8.0
 urllib3==2.6.0
 websocket-client==1.5.2
+
+# New dependencies for Home Assistant integration
+paho-mqtt==2.1.0
+python-dotenv==1.0.0
+PyYAML==6.0.1
+
+# InfluxDB for historical data storage
+influxdb-client==1.38.0

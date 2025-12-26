@@ -1,0 +1,105 @@
+# Example Lovelace Dashboard for Tesla Solar
+#
+# Copy this to your Home Assistant dashboards configuration.
+# Replace {site_id} with your actual Tesla site ID.
+
+title: Tesla Solar
+views:
+  - title: Solar Overview
+    path: solar
+    icon: mdi:solar-power
+    cards:
+      # Header with current power values
+      - type: horizontal-stack
+        cards:
+          - type: entity
+            entity: sensor.tesla_solar_power
+            name: Solar
+            icon: mdi:solar-power
+          - type: entity
+            entity: sensor.tesla_battery_power
+            name: Battery
+            icon: mdi:battery
+          - type: entity
+            entity: sensor.tesla_grid_power
+            name: Grid
+            icon: mdi:transmission-tower
+          - type: entity
+            entity: sensor.tesla_home_load
+            name: Home
+            icon: mdi:home
+
+      # Battery state of charge gauge
+      - type: gauge
+        entity: sensor.tesla_battery_soc
+        name: Powerwall Battery
+        min: 0
+        max: 100
+        severity:
+          green: 50
+          yellow: 20
+          red: 0
+
+      # Solar production gauge
+      - type: gauge
+        entity: sensor.tesla_solar_power
+        name: Solar Production
+        min: 0
+        max: 12000
+        severity:
+          green: 6000
+          yellow: 2000
+          red: 0
+        unit: W
+
+      # Today's energy totals
+      - type: entities
+        title: Today's Energy
+        entities:
+          - entity: sensor.tesla_solar_energy_today
+            name: Solar Generated
+          - entity: sensor.tesla_grid_import_today
+            name: Grid Import
+          - entity: sensor.tesla_grid_export_today
+            name: Grid Export
+          - entity: sensor.tesla_battery_energy_discharged_today
+            name: Battery Discharged
+          - entity: sensor.tesla_battery_energy_charged_today
+            name: Battery Charged
+
+      # History graph - Power over time
+      - type: history-graph
+        title: Power History (24h)
+        hours_to_show: 24
+        entities:
+          - entity: sensor.tesla_solar_power
+            name: Solar
+          - entity: sensor.tesla_battery_power
+            name: Battery
+          - entity: sensor.tesla_grid_power
+            name: Grid
+          - entity: sensor.tesla_home_load
+            name: Home
+
+      # Statistics for the week
+      - type: statistics-graph
+        title: Solar Production (7 days)
+        entities:
+          - entity: sensor.tesla_solar_energy_today
+        days_to_show: 7
+        stat_types:
+          - mean
+          - max
+          - min
+
+      # Conditional card - Show alert when battery is low
+      - type: conditional
+        conditions:
+          - entity: sensor.tesla_battery_soc
+            state_below: 20
+        card:
+          type: markdown
+          content: |
+            ## ⚠️ Battery Low!
+            Powerwall battery is below 20%. Consider reducing power usage.
+
