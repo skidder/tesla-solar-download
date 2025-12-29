@@ -426,8 +426,14 @@ def publish_to_influxdb(
             logger.info(f"  Wrote {written} energy records")
 
 
-def publish_latest_to_influxdb(publisher: InfluxDBPublisher, data_dir: Path):
-    """Publish only the latest data point for each metric to InfluxDB."""
+def publish_daily_to_influxdb(publisher: InfluxDBPublisher, data_dir: Path):
+    """
+    Publish today's data to InfluxDB.
+    
+    This writes ALL records from the most recent CSV files (today's data),
+    not just the last data point. InfluxDB handles duplicates gracefully
+    (same timestamp = overwrite), so this is safe to run multiple times.
+    """
     site_ids = find_site_ids(data_dir)
 
     if not site_ids:
@@ -435,37 +441,35 @@ def publish_latest_to_influxdb(publisher: InfluxDBPublisher, data_dir: Path):
         return
 
     for site_id in site_ids:
-        logger.info(f"Publishing latest data for site ***{site_id[-4:]} to InfluxDB")
+        logger.info(f"Publishing daily data for site ***{site_id[-4:]} to InfluxDB")
 
-        # Get latest power file and its last record
+        # Get the most recent power file (today's data) and write ALL records
         power_dir = data_dir / site_id / "power"
         power_files = sorted(power_dir.glob("*.csv"), reverse=True) if power_dir.exists() else []
         if power_files:
+            # Write all records from the most recent file (today)
             records = get_all_csv_data(power_files[0])
             if records:
-                record = records[-1]
-                publisher.write_power_point(site_id, record.get("timestamp", ""), record)
-                logger.info(f"  Wrote latest power data")
+                publisher.write_power_batch(site_id, records)
+                logger.info(f"  Wrote {len(records)} power records from {power_files[0].name}")
 
-        # Get latest SOE file
+        # Get the most recent SOE file and write ALL records
         soe_dir = data_dir / site_id / "soe"
         soe_files = sorted(soe_dir.glob("*.csv"), reverse=True) if soe_dir.exists() else []
         if soe_files:
             records = get_all_csv_data(soe_files[0])
             if records:
-                record = records[-1]
-                publisher.write_soe_point(site_id, record.get("timestamp", ""), record)
-                logger.info(f"  Wrote latest SOE data")
+                publisher.write_soe_batch(site_id, records)
+                logger.info(f"  Wrote {len(records)} SOE records from {soe_files[0].name}")
 
-        # Get latest energy file
+        # Get the most recent energy file and write ALL records
         energy_dir = data_dir / site_id / "energy"
         energy_files = sorted(energy_dir.glob("*.csv"), reverse=True) if energy_dir.exists() else []
         if energy_files:
             records = get_all_csv_data(energy_files[0])
             if records:
-                record = records[-1]
-                publisher.write_energy_point(site_id, record.get("timestamp", ""), record)
-                logger.info(f"  Wrote latest energy data")
+                publisher.write_energy_batch(site_id, records)
+                logger.info(f"  Wrote {len(records)} energy records from {energy_files[0].name}")
 
 
 def main():
@@ -512,8 +516,8 @@ def main():
             logger.info("Publishing ALL historical data to InfluxDB...")
             publish_to_influxdb(publisher, data_dir, batch_size=args.batch_size)
         else:
-            logger.info("Publishing latest data to InfluxDB...")
-            publish_latest_to_influxdb(publisher, data_dir)
+            logger.info("Publishing today's data to InfluxDB...")
+            publish_daily_to_influxdb(publisher, data_dir)
 
         logger.info("Successfully published data to InfluxDB")
     finally:
@@ -524,4 +528,8 @@ def main():
 
 if __name__ == "__main__":
     exit(main())
+
+
+
+
 

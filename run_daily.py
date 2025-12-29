@@ -184,7 +184,7 @@ def publish_to_influxdb(
     from influxdb_publisher import (
         InfluxDBPublisher,
         publish_to_influxdb as influx_publish_all,
-        publish_latest_to_influxdb,
+        publish_daily_to_influxdb,
     )
     
     logger = logging.getLogger(__name__)
@@ -200,8 +200,8 @@ def publish_to_influxdb(
             influx_publish_all(publisher, data_dir, batch_size=batch_size)
             logger.info("Successfully published all historical data to InfluxDB")
         else:
-            publish_latest_to_influxdb(publisher, data_dir)
-            logger.info("Successfully published latest data to InfluxDB")
+            publish_daily_to_influxdb(publisher, data_dir)
+            logger.info("Successfully published today's data to InfluxDB")
         return True
     except Exception as e:
         logger.error(f"Failed to publish to InfluxDB: {e}")
