@@ -88,6 +88,15 @@ class Config:
         if cls.MQTT_ENABLED:
             if not cls.MQTT_HOST:
                 errors.append("MQTT_HOST is required when MQTT is enabled")
+        if cls.INFLUXDB_ENABLED:
+            if not cls.INFLUXDB_URL:
+                errors.append("INFLUXDB_URL is required when InfluxDB is enabled")
+            if not cls.INFLUXDB_TOKEN:
+                errors.append("INFLUXDB_TOKEN is required when InfluxDB is enabled")
+            if not cls.INFLUXDB_ORG:
+                errors.append("INFLUXDB_ORG is required when InfluxDB is enabled")
+            if not cls.INFLUXDB_BUCKET:
+                errors.append("INFLUXDB_BUCKET is required when InfluxDB is enabled")
         return errors
     
     @classmethod

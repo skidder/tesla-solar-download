@@ -115,3 +115,7 @@ else
     echo "  Run manually:          sudo systemctl start tesla-solar@$USER_NAME.service"
 fi
 
+
+
+
+

@@ -65,10 +65,10 @@ class InfluxDBPublisher:
             self.client = None
             self.write_api = None
 
-    def write_power_point(self, site_id: str, timestamp: str, data: dict):
-        """Write a power data point to InfluxDB."""
+    def write_power_point(self, site_id: str, timestamp: str, data: dict) -> bool:
+        """Write a power data point to InfluxDB. Returns True on success."""
         if not self.write_api:
-            return
+            return False
 
         try:
             dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
@@ -91,14 +91,16 @@ class InfluxDBPublisher:
                 org=self.config.INFLUXDB_ORG,
                 record=point,
             )
+            return True
 
         except Exception as e:
             logger.error(f"Failed to write power point: {e}")
+            return False
 
-    def write_soe_point(self, site_id: str, timestamp: str, data: dict):
-        """Write a battery SOE data point to InfluxDB."""
+    def write_soe_point(self, site_id: str, timestamp: str, data: dict) -> bool:
+        """Write a battery SOE data point to InfluxDB. Returns True on success."""
         if not self.write_api:
-            return
+            return False
 
         try:
             dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
@@ -120,14 +122,16 @@ class InfluxDBPublisher:
                 org=self.config.INFLUXDB_ORG,
                 record=point,
             )
+            return True
 
         except Exception as e:
             logger.error(f"Failed to write SOE point: {e}")
+            return False
 
-    def write_energy_point(self, site_id: str, timestamp: str, data: dict):
-        """Write an energy data point to InfluxDB."""
+    def write_energy_point(self, site_id: str, timestamp: str, data: dict) -> bool:
+        """Write an energy data point to InfluxDB. Returns True on success."""
         if not self.write_api:
-            return
+            return False
 
         try:
             dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
@@ -163,14 +167,16 @@ class InfluxDBPublisher:
                 org=self.config.INFLUXDB_ORG,
                 record=point,
             )
+            return True
 
         except Exception as e:
             logger.error(f"Failed to write energy point: {e}")
+            return False
 
-    def write_power_batch(self, site_id: str, records: list[dict]):
-        """Write a batch of power records to InfluxDB."""
+    def write_power_batch(self, site_id: str, records: list[dict]) -> int:
+        """Write a batch of power records to InfluxDB. Returns count of points written."""
         if not self.write_api:
-            return
+            return 0
 
         points = []
         for record in records:
@@ -200,16 +206,22 @@ class InfluxDBPublisher:
                 pass
 
         if points:
-            self.write_api.write(
-                bucket=self.config.INFLUXDB_BUCKET,
-                org=self.config.INFLUXDB_ORG,
-                record=points,
-            )
+            try:
+                self.write_api.write(
+                    bucket=self.config.INFLUXDB_BUCKET,
+                    org=self.config.INFLUXDB_ORG,
+                    record=points,
+                )
+                return len(points)
+            except Exception as e:
+                logger.error(f"Failed to write power batch: {e}")
+                return 0
+        return 0
 
-    def write_soe_batch(self, site_id: str, records: list[dict]):
-        """Write a batch of SOE records to InfluxDB."""
+    def write_soe_batch(self, site_id: str, records: list[dict]) -> int:
+        """Write a batch of SOE records to InfluxDB. Returns count of points written."""
         if not self.write_api:
-            return
+            return 0
 
         points = []
         for record in records:
@@ -238,16 +250,22 @@ class InfluxDBPublisher:
                 pass
 
         if points:
-            self.write_api.write(
-                bucket=self.config.INFLUXDB_BUCKET,
-                org=self.config.INFLUXDB_ORG,
-                record=points,
-            )
+            try:
+                self.write_api.write(
+                    bucket=self.config.INFLUXDB_BUCKET,
+                    org=self.config.INFLUXDB_ORG,
+                    record=points,
+                )
+                return len(points)
+            except Exception as e:
+                logger.error(f"Failed to write SOE batch: {e}")
+                return 0
+        return 0
 
-    def write_energy_batch(self, site_id: str, records: list[dict]):
-        """Write a batch of energy records to InfluxDB."""
+    def write_energy_batch(self, site_id: str, records: list[dict]) -> int:
+        """Write a batch of energy records to InfluxDB. Returns count of points written."""
         if not self.write_api:
-            return
+            return 0
 
         energy_fields = [
             "solar_energy_exported",
@@ -290,11 +308,17 @@ class InfluxDBPublisher:
                 pass
 
         if points:
-            self.write_api.write(
-                bucket=self.config.INFLUXDB_BUCKET,
-                org=self.config.INFLUXDB_ORG,
-                record=points,
-            )
+            try:
+                self.write_api.write(
+                    bucket=self.config.INFLUXDB_BUCKET,
+                    org=self.config.INFLUXDB_ORG,
+                    record=points,
+                )
+                return len(points)
+            except Exception as e:
+                logger.error(f"Failed to write energy batch: {e}")
+                return 0
+        return 0
 
 
 def get_all_csv_data(csv_path: Path) -> list[dict]:

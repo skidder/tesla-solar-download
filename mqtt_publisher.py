@@ -8,8 +8,10 @@ Supports Home Assistant MQTT Discovery for automatic sensor configuration.
 import csv
 import json
 import logging
+from collections import deque
 from datetime import datetime
 from pathlib import Path
+from threading import Event
 from typing import Any, Optional
 
 import paho.mqtt.client as mqtt
@@ -114,6 +116,7 @@ class MQTTPublisher:
         self.config = config
         self.client: Optional[mqtt.Client] = None
         self._connected = False
+        self._connect_event = Event()
 
     def connect(self) -> bool:
         """Connect to the MQTT broker."""
@@ -122,6 +125,7 @@ class MQTTPublisher:
             return False
 
         try:
+            self._connect_event.clear()
             self.client = mqtt.Client(
                 client_id=self.config.MQTT_CLIENT_ID,
                 callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -140,18 +144,12 @@ class MQTTPublisher:
             self.client.connect(self.config.MQTT_HOST, self.config.MQTT_PORT, keepalive=60)
             self.client.loop_start()
 
-            # Wait briefly for connection
-            import time
-            timeout = 10
-            while not self._connected and timeout > 0:
-                time.sleep(0.5)
-                timeout -= 0.5
-
-            if not self._connected:
+            # Wait for connection using threading.Event (proper synchronization)
+            if not self._connect_event.wait(timeout=10):
                 logger.error("Failed to connect to MQTT broker within timeout")
                 return False
 
-            return True
+            return self._connected
 
         except Exception as e:
             logger.error(f"Failed to connect to MQTT broker: {e}")
@@ -171,6 +169,9 @@ class MQTTPublisher:
             self._connected = True
         else:
             logger.error(f"Failed to connect to MQTT broker: {reason_code}")
+            self._connected = False
+        # Signal that connection attempt is complete (success or failure)
+        self._connect_event.set()
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties):
         """Callback when disconnected from MQTT broker."""
@@ -274,16 +275,17 @@ class MQTTPublisher:
 
 
 def get_latest_csv_data(csv_path: Path) -> Optional[dict]:
-    """Read the latest row from a CSV file."""
+    """Read the latest row from a CSV file efficiently (without loading entire file)."""
     if not csv_path.exists():
         return None
 
     try:
         with open(csv_path, "r") as f:
             reader = csv.DictReader(f)
-            rows = list(reader)
-            if rows:
-                return rows[-1]  # Return the last row
+            # Use deque with maxlen=1 to only keep the last row in memory
+            last_row = deque(reader, maxlen=1)
+            if last_row:
+                return last_row[0]
     except Exception as e:
         logger.error(f"Error reading {csv_path}: {e}")
 
