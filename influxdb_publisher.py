@@ -14,11 +14,22 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from influxdb_client import InfluxDBClient, Point, WritePrecision
+
+# Tesla API returns timestamps in local time (PT for California installations)
+LOCAL_TZ = ZoneInfo("America/Los_Angeles")
+
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from config import Config
+
+
+def parse_local_timestamp(timestamp: str) -> datetime:
+    """Parse a timestamp string as local PT time (timezone-aware)."""
+    dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+    return dt.replace(tzinfo=LOCAL_TZ)
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +82,7 @@ class InfluxDBPublisher:
             return False
 
         try:
-            dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+            dt = parse_local_timestamp(timestamp)
 
             point = (
                 Point("tesla_solar_power")
@@ -103,7 +114,7 @@ class InfluxDBPublisher:
             return False
 
         try:
-            dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+            dt = parse_local_timestamp(timestamp)
 
             point = (
                 Point("tesla_solar_soe")
@@ -134,7 +145,7 @@ class InfluxDBPublisher:
             return False
 
         try:
-            dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+            dt = parse_local_timestamp(timestamp)
 
             point = (
                 Point("tesla_solar_energy")
@@ -185,7 +196,7 @@ class InfluxDBPublisher:
                 continue
 
             try:
-                dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+                dt = parse_local_timestamp(timestamp)
 
                 point = (
                     Point("tesla_solar_power")
@@ -230,7 +241,7 @@ class InfluxDBPublisher:
                 continue
 
             try:
-                dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+                dt = parse_local_timestamp(timestamp)
 
                 point = (
                     Point("tesla_solar_soe")
@@ -287,7 +298,7 @@ class InfluxDBPublisher:
                 continue
 
             try:
-                dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+                dt = parse_local_timestamp(timestamp)
 
                 point = (
                     Point("tesla_solar_energy")
