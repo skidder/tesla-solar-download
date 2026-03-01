@@ -248,6 +248,11 @@ def main():
         help="Only publish to MQTT (skip InfluxDB)",
     )
     parser.add_argument(
+        "--influxdb-all-history",
+        action="store_true",
+        help="Publish all history to InfluxDB (while still publishing latest to MQTT)",
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=1000,
@@ -311,14 +316,15 @@ def main():
     # Publish to InfluxDB
     if not args.download_only and not args.mqtt_only:
         if Config.INFLUXDB_ENABLED:
-            if args.all_history:
+            influxdb_all_history = args.all_history or args.influxdb_all_history
+            if influxdb_all_history:
                 logger.info("Publishing ALL historical data to InfluxDB...")
             else:
                 logger.info("Publishing latest data to InfluxDB...")
-            
+
             if not publish_to_influxdb(
                 data_dir,
-                all_history=args.all_history,
+                all_history=influxdb_all_history,
                 batch_size=args.batch_size,
             ):
                 logger.error("InfluxDB publish failed")

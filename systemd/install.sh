@@ -36,7 +36,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=$PROJECT_DIR
-ExecStart=$PROJECT_DIR/venv/bin/python $PROJECT_DIR/run_daily.py
+ExecStart=$PROJECT_DIR/venv/bin/python $PROJECT_DIR/run_daily.py --influxdb-all-history
 EnvironmentFile=-$PROJECT_DIR/.env
 
 # Logging
