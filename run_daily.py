@@ -68,7 +68,8 @@ def download_tesla_data(email: str, debug: bool = False) -> bool:
     logger = logging.getLogger(__name__)
     
     try:
-        tesla = teslapy.Tesla(email, retry=2, timeout=10)
+        cache_file = os.environ.get("TESLA_CACHE_FILE", "cache.json")
+        tesla = teslapy.Tesla(email, cache_file=cache_file, retry=2, timeout=10)
         
         if not tesla.authorized:
             logger.error(

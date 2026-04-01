@@ -378,7 +378,8 @@ def main():
     parser.add_argument('--debug', action='store_true', help='Print debug info')
     args = parser.parse_args()
 
-    tesla = teslapy.Tesla(args.email, retry=2, timeout=10)
+    cache_file = os.environ.get('TESLA_CACHE_FILE', 'cache.json')
+    tesla = teslapy.Tesla(args.email, cache_file=cache_file, retry=2, timeout=10)
     if not tesla.authorized:
         print('STEP 1: Log in to Tesla.  Open this page in your browser:\n')
         print(tesla.authorization_url())
