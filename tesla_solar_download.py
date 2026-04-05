@@ -27,6 +27,12 @@ import teslapy
 from dateutil.parser import parse
 from retry import retry
 
+
+def _data_dir():
+    """Return the base data directory (configurable via DATA_DIR env var)."""
+    return os.environ.get('DATA_DIR', 'download')
+
+
 # Exclude columns that are not relevant (and generally not set).
 EXCLUDED_COLUMNS = (
     'grid_services_power',
@@ -80,7 +86,7 @@ def _atomic_write_csv(csv_filename, fieldnames, timeseries, row_processor=None):
 def _get_energy_csv_name(date, site_id, partial_month=False):
     str_date = date.strftime('%Y-%m')
     suffix = '.partial.csv' if partial_month else '.csv'
-    return f'download/{site_id}/energy/{str_date}{suffix}'
+    return f'{_data_dir()}/{site_id}/energy/{str_date}{suffix}'
 
 
 def _get_fieldnames_from_series(timeseries):
@@ -199,7 +205,7 @@ def _download_energy_data(tesla, site_id, debug=False):
 
 
 def _delete_partial_energy_files(site_id):
-    dir = os.path.join('download', str(site_id), 'energy')
+    dir = os.path.join(_data_dir(), str(site_id), 'energy')
     if not os.path.exists(dir):
         return
     for fname in os.listdir(dir):
@@ -213,13 +219,13 @@ def _delete_partial_energy_files(site_id):
 def _get_power_csv_name(date, site_id, partial_day=False):
     str_date = date.strftime('%Y-%m-%d')
     suffix = '.partial.csv' if partial_day else '.csv'
-    return f'download/{site_id}/power/{str_date}{suffix}'
+    return f'{_data_dir()}/{site_id}/power/{str_date}{suffix}'
 
 
 def _get_soe_csv_name(date, site_id, partial_day=False):
     str_date = date.strftime('%Y-%m-%d')
     suffix = '.partial.csv' if partial_day else '.csv'
-    return f'download/{site_id}/soe/{str_date}{suffix}'
+    return f'{_data_dir()}/{site_id}/soe/{str_date}{suffix}'
 
 
 def _write_power_csv(timeseries, date, site_id, partial_day=False):
@@ -345,7 +351,7 @@ def _download_power_data(tesla, site_id, debug=False):
 
 
 def _delete_partial_power_files(site_id):
-    dir = os.path.join('download', str(site_id), 'power')
+    dir = os.path.join(_data_dir(), str(site_id), 'power')
     if not os.path.exists(dir):
         return
     for fname in os.listdir(dir):
@@ -357,7 +363,7 @@ def _delete_partial_power_files(site_id):
 
 
 def _delete_partial_soe_files(site_id):
-    dir = os.path.join('download', str(site_id), 'soe')
+    dir = os.path.join(_data_dir(), str(site_id), 'soe')
     if not os.path.exists(dir):
         return
     for fname in os.listdir(dir):
@@ -397,7 +403,7 @@ def main():
             site_id = product['energy_site_id']
             obfuscated_site_it = f'***{str(site_id)[-4:]}'
             print(
-                f'Downloading energy data for {resource_type} site {obfuscated_site_it} to download/energy/'
+                f'Downloading energy data for {resource_type} site {obfuscated_site_it} to {_data_dir()}/energy/'
             )
             try:
                 _delete_partial_energy_files(site_id)
@@ -407,7 +413,7 @@ def main():
             print()
 
             print(
-                f'Downloading power data for {resource_type} site {obfuscated_site_it} to download/power/'
+                f'Downloading power data for {resource_type} site {obfuscated_site_it} to {_data_dir()}/power/'
             )
             try:
                 _delete_partial_power_files(site_id)
