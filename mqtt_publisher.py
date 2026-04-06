@@ -63,6 +63,58 @@ SOE_SENSORS = {
     },
 }
 
+SUN_SENSORS = {
+    "sunrise": {
+        "name": "Sunrise",
+        "unit": None,
+        "device_class": None,
+        "state_class": None,
+        "icon": "mdi:white-balance-sunny",
+    },
+    "sunset": {
+        "name": "Sunset",
+        "unit": None,
+        "device_class": None,
+        "state_class": None,
+        "icon": "mdi:weather-night",
+    },
+    "altitude": {
+        "name": "Sun Altitude",
+        "unit": "°",
+        "device_class": None,
+        "state_class": "measurement",
+        "icon": "mdi:angle-acute",
+    },
+    "azimuth": {
+        "name": "Sun Azimuth",
+        "unit": "°",
+        "device_class": None,
+        "state_class": "measurement",
+        "icon": "mdi:compass",
+    },
+    "is_daytime": {
+        "name": "Is Daytime",
+        "unit": None,
+        "device_class": None,
+        "state_class": None,
+        "icon": "mdi:sun-clock",
+    },
+    "time_to_sunset_hours": {
+        "name": "Time to Sunset",
+        "unit": "h",
+        "device_class": None,
+        "state_class": "measurement",
+        "icon": "mdi:weather-night",
+    },
+    "production_factor": {
+        "name": "Solar Production Factor",
+        "unit": "%",
+        "device_class": None,
+        "state_class": "measurement",
+        "icon": "mdi:percent",
+    },
+}
+
 ENERGY_SENSORS = {
     "solar_energy_exported": {
         "name": "Solar Energy Today",
@@ -208,7 +260,7 @@ class MQTTPublisher:
             "model": "Solar/Powerwall",
         }
 
-        all_sensors = {**POWER_SENSORS, **SOE_SENSORS, **ENERGY_SENSORS}
+        all_sensors = {**POWER_SENSORS, **SOE_SENSORS, **ENERGY_SENSORS, **SUN_SENSORS}
 
         for sensor_id, sensor_config in all_sensors.items():
             discovery_topic = (
@@ -222,12 +274,17 @@ class MQTTPublisher:
                 "name": sensor_config["name"],
                 "unique_id": f"tesla_solar_{site_id}_{sensor_id}",
                 "state_topic": state_topic,
-                "unit_of_measurement": sensor_config["unit"],
-                "device_class": sensor_config["device_class"],
-                "state_class": sensor_config["state_class"],
                 "icon": sensor_config["icon"],
                 "device": device_info,
             }
+
+            # Only include optional fields if they have values
+            if sensor_config["unit"]:
+                discovery_payload["unit_of_measurement"] = sensor_config["unit"]
+            if sensor_config["device_class"]:
+                discovery_payload["device_class"] = sensor_config["device_class"]
+            if sensor_config["state_class"]:
+                discovery_payload["state_class"] = sensor_config["state_class"]
 
             self._publish(discovery_topic, discovery_payload, retain=True)
 
@@ -259,6 +316,23 @@ class MQTTPublisher:
 
         if "timestamp" in data:
             topic = f"{self.config.MQTT_TOPIC_PREFIX}/{site_id}/soe_timestamp"
+            self._publish(topic, data["timestamp"], retain=True)
+
+    def publish_sun_data(self, site_id: str, data: dict):
+        """Publish sun position and timing data."""
+        for sensor_id in SUN_SENSORS:
+            if sensor_id in data:
+                topic = f"{self.config.MQTT_TOPIC_PREFIX}/{site_id}/{sensor_id}"
+                value = data[sensor_id]
+                # Format booleans as ON/OFF for HA
+                if isinstance(value, bool):
+                    value = "ON" if value else "OFF"
+                elif isinstance(value, float):
+                    value = round(value, 2)
+                self._publish(topic, str(value), retain=True)
+
+        if "timestamp" in data:
+            topic = f"{self.config.MQTT_TOPIC_PREFIX}/{site_id}/sun_timestamp"
             self._publish(topic, data["timestamp"], retain=True)
 
     def publish_energy_data(self, site_id: str, data: dict):

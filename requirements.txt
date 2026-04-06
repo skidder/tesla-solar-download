@@ -21,3 +21,6 @@ PyYAML==6.0.1
 
 # InfluxDB for historical data storage
 influxdb-client==1.38.0
+
+# Sun position calculations for solar optimization
+astral==3.2
