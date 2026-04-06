@@ -17,6 +17,7 @@ limitations under the License.
 import argparse
 import csv
 import os
+import tempfile
 import time
 import traceback
 from datetime import datetime, timedelta
@@ -25,6 +26,12 @@ import pytz
 import teslapy
 from dateutil.parser import parse
 from retry import retry
+
+
+def _data_dir():
+    """Return the base data directory (configurable via DATA_DIR env var)."""
+    return os.environ.get('DATA_DIR', 'download')
+
 
 # Exclude columns that are not relevant (and generally not set).
 EXCLUDED_COLUMNS = (
@@ -45,10 +52,41 @@ def _remove_excluded_columns(timeseries):
             del timeseries[col]
 
 
+def _atomic_write_csv(csv_filename, fieldnames, timeseries, row_processor=None):
+    """
+    Write CSV file atomically using temp file + rename.
+
+    This prevents data corruption if the write fails partway through.
+    The row_processor is an optional function to transform each row before writing.
+    """
+    os.makedirs(os.path.dirname(csv_filename), exist_ok=True)
+
+    # Write to temp file first
+    dir_name = os.path.dirname(csv_filename)
+    temp_fd, temp_path = tempfile.mkstemp(suffix='.csv', dir=dir_name)
+    try:
+        with os.fdopen(temp_fd, 'w', newline='') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=fieldnames, extrasaction='ignore')
+            writer.writeheader()
+            for ts in timeseries:
+                if row_processor:
+                    row_processor(ts)
+                writer.writerow(ts)
+        # Atomic rename - this is the commit point
+        os.replace(temp_path, csv_filename)
+    except Exception:
+        # Clean up temp file on error
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
+
+
 def _get_energy_csv_name(date, site_id, partial_month=False):
     str_date = date.strftime('%Y-%m')
     suffix = '.partial.csv' if partial_month else '.csv'
-    return f'download/{site_id}/energy/{str_date}{suffix}'
+    return f'{_data_dir()}/{site_id}/energy/{str_date}{suffix}'
 
 
 def _get_fieldnames_from_series(timeseries):
@@ -64,16 +102,14 @@ def _write_energy_csv(timeseries, date, site_id, partial_month=False):
         raise ValueError('No timeseries')
 
     csv_filename = _get_energy_csv_name(date, site_id, partial_month=partial_month)
-    os.makedirs(os.path.dirname(csv_filename), exist_ok=True)
     fieldnames = _get_fieldnames_from_series(timeseries)
     fieldnames = [n for n in fieldnames if n not in EXCLUDED_COLUMNS]
-    with open(csv_filename, 'w') as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames, extrasaction='ignore')
-        writer.writeheader()
-        for ts in timeseries:
-            ts['timestamp'] = parse(ts['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-            _remove_excluded_columns(ts)
-            writer.writerow(ts)
+
+    def process_row(ts):
+        ts['timestamp'] = parse(ts['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
+        _remove_excluded_columns(ts)
+
+    _atomic_write_csv(csv_filename, fieldnames, timeseries, process_row)
 
 
 @retry(tries=2, delay=5)
@@ -110,6 +146,8 @@ def _get_timezone(site_config, installation_date):
     for tz in pytz.all_timezones:
         if datetime.now(pytz.timezone(tz)).strftime('%z') == offset:
             return tz
+    # Fallback to UTC if no timezone matches (should not happen in practice)
+    raise ValueError(f'Could not determine timezone for offset {offset}')
 
 
 def _download_energy_data(tesla, site_id, debug=False):
@@ -153,28 +191,41 @@ def _download_energy_data(tesla, site_id, debug=False):
         start_date = end_date.replace(hour=0, minute=0, second=0) - timedelta(
             days=end_date.day - 1
         )
-        start_date = pytz.timezone(timezone).localize(start_date.replace(tzinfo=None))
+        # Use is_dst=None to let pytz pick a valid time; avoids AmbiguousTimeError
+        # during DST transitions by defaulting to standard time
+        try:
+            start_date = pytz.timezone(timezone).localize(
+                start_date.replace(tzinfo=None), is_dst=None
+            )
+        except pytz.exceptions.AmbiguousTimeError:
+            # Fall back to standard time during ambiguous periods
+            start_date = pytz.timezone(timezone).localize(
+                start_date.replace(tzinfo=None), is_dst=False
+            )
 
 
 def _delete_partial_energy_files(site_id):
-    dir = os.path.join('download', str(site_id), 'energy')
+    dir = os.path.join(_data_dir(), str(site_id), 'energy')
     if not os.path.exists(dir):
         return
     for fname in os.listdir(dir):
         if '.partial.csv' in fname:
-            os.remove(os.path.join(dir, fname))
+            try:
+                os.remove(os.path.join(dir, fname))
+            except FileNotFoundError:
+                pass  # Already deleted by concurrent process
 
 
 def _get_power_csv_name(date, site_id, partial_day=False):
     str_date = date.strftime('%Y-%m-%d')
     suffix = '.partial.csv' if partial_day else '.csv'
-    return f'download/{site_id}/power/{str_date}{suffix}'
+    return f'{_data_dir()}/{site_id}/power/{str_date}{suffix}'
 
 
 def _get_soe_csv_name(date, site_id, partial_day=False):
     str_date = date.strftime('%Y-%m-%d')
     suffix = '.partial.csv' if partial_day else '.csv'
-    return f'download/{site_id}/soe/{str_date}{suffix}'
+    return f'{_data_dir()}/{site_id}/soe/{str_date}{suffix}'
 
 
 def _write_power_csv(timeseries, date, site_id, partial_day=False):
@@ -182,22 +233,21 @@ def _write_power_csv(timeseries, date, site_id, partial_day=False):
         raise ValueError(f'No timeseries for {date}')
 
     csv_filename = _get_power_csv_name(date, site_id, partial_day=partial_day)
-    os.makedirs(os.path.dirname(csv_filename), exist_ok=True)
     fieldnames = _get_fieldnames_from_series(timeseries) + ['load_power']
     fieldnames = [n for n in fieldnames if n not in EXCLUDED_COLUMNS]
-    with open(csv_filename, 'w') as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames, extrasaction='ignore')
-        writer.writeheader()
-        for ts in timeseries:
-            ts['timestamp'] = parse(ts['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-            ts['load_power'] = (
-                ts['solar_power']
-                + ts['battery_power']
-                + ts['grid_power']
-                + ts['generator_power']
-            )
-            _remove_excluded_columns(ts)
-            writer.writerow(ts)
+
+    def process_row(ts):
+        ts['timestamp'] = parse(ts['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
+        # Use .get() with defaults to avoid KeyError if API returns incomplete data
+        ts['load_power'] = (
+            float(ts.get('solar_power', 0))
+            + float(ts.get('battery_power', 0))
+            + float(ts.get('grid_power', 0))
+            + float(ts.get('generator_power', 0))
+        )
+        _remove_excluded_columns(ts)
+
+    _atomic_write_csv(csv_filename, fieldnames, timeseries, process_row)
 
 
 def _write_soe_csv(timeseries, date, site_id, partial_day=False):
@@ -205,16 +255,14 @@ def _write_soe_csv(timeseries, date, site_id, partial_day=False):
         raise ValueError(f'No timeseries for {date}')
 
     csv_filename = _get_soe_csv_name(date, site_id, partial_day=partial_day)
-    os.makedirs(os.path.dirname(csv_filename), exist_ok=True)
     fieldnames = _get_fieldnames_from_series(timeseries)
     fieldnames = [n for n in fieldnames if n not in EXCLUDED_COLUMNS]
-    with open(csv_filename, 'w') as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames, extrasaction='ignore')
-        writer.writeheader()
-        for ts in timeseries:
-            ts['timestamp'] = parse(ts['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-            _remove_excluded_columns(ts)
-            writer.writerow(ts)
+
+    def process_row(ts):
+        ts['timestamp'] = parse(ts['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
+        _remove_excluded_columns(ts)
+
+    _atomic_write_csv(csv_filename, fieldnames, timeseries, process_row)
 
 
 @retry(tries=2, delay=5)
@@ -303,21 +351,27 @@ def _download_power_data(tesla, site_id, debug=False):
 
 
 def _delete_partial_power_files(site_id):
-    dir = os.path.join('download', str(site_id), 'power')
+    dir = os.path.join(_data_dir(), str(site_id), 'power')
     if not os.path.exists(dir):
         return
     for fname in os.listdir(dir):
         if '.partial.csv' in fname:
-            os.remove(os.path.join(dir, fname))
+            try:
+                os.remove(os.path.join(dir, fname))
+            except FileNotFoundError:
+                pass  # Already deleted by concurrent process
 
 
 def _delete_partial_soe_files(site_id):
-    dir = os.path.join('download', str(site_id), 'soe')
+    dir = os.path.join(_data_dir(), str(site_id), 'soe')
     if not os.path.exists(dir):
         return
     for fname in os.listdir(dir):
         if '.partial.csv' in fname:
-            os.remove(os.path.join(dir, fname))
+            try:
+                os.remove(os.path.join(dir, fname))
+            except FileNotFoundError:
+                pass  # Already deleted by concurrent process
 
 
 def main():
@@ -330,7 +384,8 @@ def main():
     parser.add_argument('--debug', action='store_true', help='Print debug info')
     args = parser.parse_args()
 
-    tesla = teslapy.Tesla(args.email, retry=2, timeout=10)
+    cache_file = os.environ.get('TESLA_CACHE_FILE', 'cache.json')
+    tesla = teslapy.Tesla(args.email, cache_file=cache_file, retry=2, timeout=10)
     if not tesla.authorized:
         print('STEP 1: Log in to Tesla.  Open this page in your browser:\n')
         print(tesla.authorization_url())
@@ -348,7 +403,7 @@ def main():
             site_id = product['energy_site_id']
             obfuscated_site_it = f'***{str(site_id)[-4:]}'
             print(
-                f'Downloading energy data for {resource_type} site {obfuscated_site_it} to download/energy/'
+                f'Downloading energy data for {resource_type} site {obfuscated_site_it} to {_data_dir()}/energy/'
             )
             try:
                 _delete_partial_energy_files(site_id)
@@ -358,7 +413,7 @@ def main():
             print()
 
             print(
-                f'Downloading power data for {resource_type} site {obfuscated_site_it} to download/power/'
+                f'Downloading power data for {resource_type} site {obfuscated_site_it} to {_data_dir()}/power/'
             )
             try:
                 _delete_partial_power_files(site_id)

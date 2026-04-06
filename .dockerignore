@@ -1,0 +1,17 @@
+venv/
+download/
+data/
+config/
+.git/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.log
+homeassistant/
+grafana/
+systemd/
+.claude/
+CLAUDE.md
+README.md
+*.md
