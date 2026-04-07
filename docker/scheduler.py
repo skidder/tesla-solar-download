@@ -26,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 SCHEDULE_HOUR = int(os.environ.get('SCHEDULE_HOUR', '23'))
 SCHEDULE_MINUTE = int(os.environ.get('SCHEDULE_MINUTE', '30'))
-RUN_ARGS = os.environ.get('RUN_ARGS', '--influxdb-all-history').split()
+# Default: download + InfluxDB only. MQTT is handled by the live_poller process.
+# Override with RUN_ARGS env var if you want different behavior.
+RUN_ARGS = os.environ.get('RUN_ARGS', '--influxdb-all-history --influxdb-only').split()
 
 
 def run_command():

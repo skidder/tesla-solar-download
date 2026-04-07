@@ -296,12 +296,21 @@ def main():
             logger.info("Data download completed")
     
     # Publish to MQTT
+    # NOTE: When the live_poller is running (default in Docker), it owns MQTT.
+    # The daily scheduler should use --influxdb-only to avoid publishing stale
+    # cumulative energy values that confuse HA's total_increasing state class.
     if not args.download_only and not args.influxdb_only:
         if Config.MQTT_ENABLED:
             if args.all_history:
                 logger.info("Publishing ALL historical data to MQTT...")
             else:
                 logger.info("Publishing latest data to MQTT...")
+            
+            logger.warning(
+                "Publishing to MQTT from daily run. If the live_poller is also "
+                "running, this may cause double-counting in HA Energy Dashboard. "
+                "Consider using --influxdb-only to let the live_poller own MQTT."
+            )
             
             if not publish_to_mqtt(
                 data_dir,
