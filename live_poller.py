@@ -300,22 +300,24 @@ def publish_influxdb(site_id, data, sun_status=None, energy_data=None):
             )
             write_api.write(bucket=Config.INFLUXDB_BUCKET, record=sun_point)
 
-        # Energy totals point
-        if energy_data:
-            energy_point = (
-                Point('tesla_solar_energy')
-                .tag('site_id', str(site_id))
-                .field('solar_energy_exported', float(energy_data.get('solar_energy_exported', 0)))
-                .field('grid_energy_imported', float(energy_data.get('grid_energy_imported', 0)))
-                .field('grid_energy_exported_from_solar', float(energy_data.get('grid_energy_exported_from_solar', 0)))
-                .field('battery_energy_exported', float(energy_data.get('battery_energy_exported', 0)))
-                .field('battery_energy_imported_from_solar', float(energy_data.get('battery_energy_imported_from_solar', 0)))
-                .field('consumer_energy_imported_from_solar', float(energy_data.get('consumer_energy_imported_from_solar', 0)))
-                .time(ts)
-            )
-            write_api.write(bucket=Config.INFLUXDB_BUCKET, record=energy_point)
+        # NOTE: tesla_solar_energy is intentionally NOT written here.
+        #
+        # The live poller fires every ~15 min, but Tesla's CALENDAR_HISTORY_DATA
+        # returns a cumulative running daily total that resets to 0 at local
+        # midnight. Writing that value with `_time = now()` produced ~96
+        # in-progress points per day plus a long stretch of 0s after midnight
+        # PT, which broke any aggregateWindow(1d, fn: last) query.
+        #
+        # The authoritative `tesla_solar_energy` series is now written by
+        # `run_daily.py` -> `influxdb_publisher.write_energy_*`, which anchors
+        # each point at local midnight of its calendar day with a `day` tag,
+        # so re-runs cleanly overwrite (and HA + Grafana daily aggregations
+        # match what the Tesla app and Home Assistant report).
+        #
+        # Live energy totals for the HA Energy Dashboard still flow through
+        # MQTT (publish_mqtt above), so HA isn't affected by this change.
 
-        logger.info(f'InfluxDB: wrote power + soe + sun + energy data at {ts}')
+        logger.info(f'InfluxDB: wrote power + soe + sun data at {ts}')
 
         client.close()
 
