@@ -31,6 +31,27 @@ def parse_local_timestamp(timestamp: str) -> datetime:
     dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
     return dt.replace(tzinfo=LOCAL_TZ)
 
+
+def energy_day_anchor(timestamp: str) -> tuple[datetime, str]:
+    """Normalize a Tesla energy CSV timestamp to its local calendar day.
+
+    Tesla's CALENDAR_HISTORY_DATA stamps each daily energy bucket near the
+    start of the local day (often `01:00` due to DST tracking), so the raw
+    timestamp is not safe to use directly for daily aggregation in InfluxDB.
+
+    Returns a tuple of:
+      * an aware datetime anchored at 00:00:00 of the local calendar day
+      * the corresponding `day` tag value, formatted as `YYYY-MM-DD`
+
+    The returned datetime is the canonical `_time` for that day's point,
+    which makes `aggregateWindow(every: 1d, fn: last)` queries align with
+    the local calendar (and lets re-runs of the daily backfill cleanly
+    overwrite existing points via series + timestamp + tag dedup).
+    """
+    dt = parse_local_timestamp(timestamp)
+    day_start = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return day_start, day_start.strftime("%Y-%m-%d")
+
 logger = logging.getLogger(__name__)
 
 
@@ -140,16 +161,22 @@ class InfluxDBPublisher:
             return False
 
     def write_energy_point(self, site_id: str, timestamp: str, data: dict) -> bool:
-        """Write an energy data point to InfluxDB. Returns True on success."""
+        """Write an energy data point to InfluxDB. Returns True on success.
+
+        Each point is anchored at local midnight of its calendar day and
+        tagged with `day=YYYY-MM-DD`, so daily aggregations align with the
+        local calendar and re-runs cleanly overwrite the previous record.
+        """
         if not self.write_api:
             return False
 
         try:
-            dt = parse_local_timestamp(timestamp)
+            dt, day_tag = energy_day_anchor(timestamp)
 
             point = (
                 Point("tesla_solar_energy")
                 .tag("site_id", site_id)
+                .tag("day", day_tag)
                 .time(dt, WritePrecision.S)
             )
 
@@ -291,18 +318,23 @@ class InfluxDBPublisher:
             "consumer_energy_imported_from_battery",
         ]
 
-        points = []
+        # Dedup within this batch: keep only the last record per local day so
+        # we don't write multiple points for the same calendar day if the CSV
+        # contains intra-day rows. The CSV is already sorted ascending, so the
+        # last write per `day_tag` wins.
+        per_day: dict[str, Point] = {}
         for record in records:
             timestamp = record.get("timestamp", "")
             if not timestamp:
                 continue
 
             try:
-                dt = parse_local_timestamp(timestamp)
+                dt, day_tag = energy_day_anchor(timestamp)
 
                 point = (
                     Point("tesla_solar_energy")
                     .tag("site_id", site_id)
+                    .tag("day", day_tag)
                     .time(dt, WritePrecision.S)
                 )
 
@@ -313,10 +345,12 @@ class InfluxDBPublisher:
                         except (ValueError, TypeError):
                             pass
 
-                points.append(point)
+                per_day[day_tag] = point
 
             except Exception:
                 pass
+
+        points = list(per_day.values())
 
         if points:
             try:
