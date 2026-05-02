@@ -331,15 +331,35 @@ def main():
     args = parser.parse_args()
 
     tesla = teslapy.Tesla(args.email, retry=2, timeout=10)
+    # Tesla deprecated the https://auth.tesla.com/void/callback redirect URI;
+    # the Tesla app's tesla://auth/callback is the only redirect still
+    # registered for the ownerapi client_id.
+    tesla.redirect_uri = 'tesla://auth/callback'
     if not tesla.authorized:
         print('STEP 1: Log in to Tesla.  Open this page in your browser:\n')
         print(tesla.authorization_url())
         print()
         print(
-            'After successful login, you will get a Page Not Found error.  That\'s expected.'
+            'After successful login, you will see a "Verified Successfully" page.  Most '
+            'browsers will not navigate to the tesla://auth/callback URL, so you need to '
+            'copy it from the browser\'s developer console:\n'
+            '  1. Open the developer tools and switch to the Console tab.\n'
+            '     (Chrome: View > Developer > Developer Tools)\n'
+            '  2. Find the message "Failed to launch \'tesla://auth/callback?...\'" or similar.\n'
+            '  3. Right-click the tesla://auth/callback?... URL in that message and choose '
+            '"Copy link address" (or your browser\'s equivalent).\n'
+            'The URL should look like: tesla://auth/callback?code=NA_abcd12345...&issuer=...'
         )
-        print('Just copy the url of that page and paste it here:')
-        tesla.fetch_token(authorization_response=input('URL after authentication: '))
+        print('\nPaste the URL here:')
+        auth_response = input('URL after authentication: ')
+        # oauthlib refuses to parse non-https authorization responses. Only the
+        # code/state query params are read from this URL, so rewriting the
+        # scheme is safe; the redirect_uri sent to the token endpoint still
+        # comes from tesla.redirect_uri.
+        auth_response = auth_response.replace(
+            'tesla://auth/callback', 'https://auth.tesla.com/void/callback', 1
+        )
+        tesla.fetch_token(authorization_response=auth_response)
         print('\nSuccess!')
 
     for product in tesla.api('PRODUCT_LIST')['response']:
